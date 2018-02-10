@@ -1,5 +1,9 @@
 #pragma once
 #include <iostream>
+
+#ifdef QT_VERSION
+#include <QDateTime>
+#endif
 //_Extend
 class _Timer
 {
@@ -7,12 +11,13 @@ private:
 	_Timer() {}
 public:
 	static _Timer* GetIns() { static _Timer _T; return &_T; }
-	//���ܣ�����������Сʱ�������Ӻͺ���
+
+	//accurcy to zzz
 	char * Get_Time_zzz()
 	{
 #ifdef QT_VERSION
+		return QDateTime::currentDateTime().toString("yyyy-MM-dd-hh-mm-ss-zzz");
 		std::cout << "qt" << std::endl;
-		return Get_Time_zzz().toLatin1().data());
 #else
 	#ifdef __AFX_H__ 
 			SYSTEMTIME st;

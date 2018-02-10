@@ -1,23 +1,35 @@
+/*
+excv is extend computer vision library
+
+Author:	SunKun
+*/
+
+
+
 #pragma once
+
 #include <iostream>
 #include <vector>
 #include <mutex>
+#include <tuple>
+
+#include "stdfx.h"
 #include "Time.h"
+#include "MEvent.h"
 #include "exstring.h"
 #include "cv_module\letter_recog.h"
 #include "cv_module\caffe.h"
-/*
-���ĵ���д��һ����̬��
-excv��˼��extend computer vision �ǽ�����opencv֮�ϵ�
 
-*/
+#ifdef QT_VERSION
+#include <QScreen> 
+#endif
+
 
 #ifndef _WIN64
 #error not support win32, win64 is OK
 #endif
 
-//��������������������
-// /D "__USE_OPENCV__"
+
 #define __USE_OPENCV__
 #ifdef __USE_OPENCV__
 #include "opencv2/opencv.hpp"
@@ -34,19 +46,47 @@ excv��˼��extend computer vision �ǽ�����opencv֮�ϵ�
 #error need opencv
 #else
 
-#ifndef MAX_INT
-#define MAX_INT    (((unsigned int)(-1))>>1)
-#endif
-
-#ifndef MIN_INT
-#define MIN_INT    (MAX_INT+1)    
-#endif
-
-//����Ҫ����
 class excv
 {
 private:
 	std::string m_name;
+
+#ifdef __AFX_H__
+	//Convert HBitmap format to cv::Mat format
+	static BOOL HBitmapToMat(HBITMAP& _hBmp, cv::Mat& _mat)
+	{
+		try {
+			BITMAP bmp;
+			GetObject(_hBmp, sizeof(BITMAP), &bmp);
+			int nChannels = bmp.bmBitsPixel == 1 ? 1 : bmp.bmBitsPixel / 8;
+			int depth = bmp.bmBitsPixel == 1 ? IPL_DEPTH_1U : IPL_DEPTH_8U;
+			cv::Mat v_mat;
+			v_mat.create(cv::Size(bmp.bmWidth, bmp.bmHeight), CV_MAKETYPE(CV_8U, nChannels));
+			GetBitmapBits(_hBmp, bmp.bmHeight*bmp.bmWidth*nChannels, v_mat.data);
+			_mat = v_mat;
+			return TRUE;
+		}
+		catch (cv::Exception e)
+		{
+			std::cout << e.what() << std::endl;
+			return FALSE;
+		}
+	}
+
+	BOOL MatToHBitmap(HBITMAP& _hBmp, cv::Mat& _mat)
+	{
+		//MAT类的TYPE=（nChannels-1+ CV_8U）<<3
+		int nChannels = (_mat.type() >> 3) - CV_8U + 1;
+		int iSize = _mat.cols*_mat.rows*nChannels;
+		_hBmp = CreateBitmap(_mat.cols, _mat.rows,
+			1, nChannels * 8, _mat.data);
+		return TRUE;
+	}
+
+#endif
+
+
+
 
 	void Init() {
 		std::cout << "start init" << std::endl;
@@ -56,29 +96,25 @@ public:
 	excv() { Init(); };
 	~excv() { Init(); };
 
-
-//	//����ģʽ
+ 
 //	static excv* GetIns() { static std::mutex mtx; std::lock_guard<std::mutex> lck(mtx); static excv *ec = nullptr; if (nullptr == ec) { ec = new excv(); }return ec; }
-	//�����������
-	//��Ҫָ��Ż�
-	float distance(cv::Point2f &a, cv::Point2f &b)
-	{
+	template<typename _T>
+	_T distance(cv::Point_<_T> &a, cv::Point_<_T> &b){
 		return euclidean_distance(a, b);
 	}
 
-	inline float euclidean_distance(cv::Point2f &a, cv::Point2f &b)
-	{
-		return std::sqrtf((b.x - a.x)*(b.x - a.x) + (b.y - a.y)*(b.y - a.y));
+	template<typename _T>
+	_T euclidean_distance(cv::Point_<_T> &a, cv::Point_<_T> &b){
+		return std::sqrt((b.x - a.x)*(b.x - a.x) + (b.y - a.y)*(b.y - a.y));
 	}
 
-	float mahalanobis_distance(cv::Point2f &a, cv::Point2f &b, int n = 2)
-	{
+	template<typename _T>
+	_T mahalanobis_distance(cv::Point_<_T> &a, cv::Point_<_T> &b, int n = 2){
 		return 0.0;
 	}
 
-	//�ҵ����������
-	inline int find_max_contours_id(std::vector<std::vector<cv::Point>> &contours)
-	{
+ 
+	static inline int find_max_contours_id(std::vector<std::vector<cv::Point>> &contours){
 		try {
 			size_t size = contours.at(0).size();
 			int max_id = 0; //-1  is invalid
@@ -98,9 +134,8 @@ public:
 	}
 
 
-
-	//����ʱ������¼ͼƬ
-	void cv_write_image(const cv::Mat & m, char* path = "")
+ 
+	static void cv_write_image(const cv::Mat & m, char* path = "")
 	{	if (m.empty()) return;
 		char fileName[_MAX_PATH] = { 0 };
 		if (0 == strlen(path))
@@ -110,7 +145,45 @@ public:
 		cv::imwrite(fileName, m);
 	}
 
-	//��ȡ
+	//截屏
+	static cv::Mat cv_print_screen_ex()
+	{
+		cv::Mat origin,screen;
+		cv_print_screen(origin);
+		cv::cvtColor(origin, screen, CV_RGBA2RGB);
+		return screen;
+	}
+	static BOOL cv_print_screen(cv::Mat& dst)
+	{
+#ifdef __AFX_H__
+		HWND hWnd = ::GetDesktopWindow();//获得屏幕的HWND.  
+		HDC hScreenDC = ::GetDC(hWnd);   //获得屏幕的HDC.  
+		HDC MemDC = ::CreateCompatibleDC(hScreenDC);
+		RECT rect;
+		::GetWindowRect(hWnd, &rect);
+		SIZE screensize;
+		screensize.cx = rect.right - rect.left;
+		screensize.cy = rect.bottom - rect.top;
+		HBITMAP hBitmap = ::CreateCompatibleBitmap(hScreenDC, screensize.cx, screensize.cy);
+		HGDIOBJ hOldBMP = ::SelectObject(MemDC, hBitmap);
+		::BitBlt(MemDC, 0, 0, screensize.cx, screensize.cy, hScreenDC, rect.left, rect.top, SRCCOPY);
+		::SelectObject(MemDC, hOldBMP);
+		::DeleteObject(MemDC);
+		::ReleaseDC(hWnd, hScreenDC);
+		if (FALSE == HBitmapToMat(hBitmap, dst))
+		{
+			return FALSE;
+		};
+		return TRUE;
+#endif
+
+#ifdef QT_VERSION
+		QScreen *screen = QGuiApplication::primaryScreen();
+#error not write qt version print_screen code
+#endif
+	}
+
+ 
 	void get_mask_image(const cv::Mat& src, cv::Mat& dst, std::vector<std::vector<cv::Point>>& contours, int ID)
 	{
 		using namespace cv;
@@ -157,6 +230,61 @@ public:
 		{
 			std::cout << "str2Point split error" << std::endl;
 		}
+	}
+
+	//获取旋转角度后得，比较最小外界矩形框，得到一个角度和旋转后的模板
+	static cv::RotatedRect get_adjust_model(cv::Mat &model, double &angle, void* _pWnd = nullptr)
+	{
+		using namespace cv;
+		using namespace std;
+#ifdef __AFX_H__
+		HWND pWnd = (HWND)_pWnd;
+#endif
+		angle = -0.0;
+		int code = 0;
+		cv::Mat bin, thres;
+		vector<vector<Point>> contours;
+		try{
+			if (CV_8UC1 == model.type())
+			{
+				bin = model.clone();
+			}
+			else if (CV_8UC3 == model.type())
+			{
+				cv::cvtColor(model, bin, CV_BGR2GRAY);
+			}
+			else
+			{
+				code = -2;
+				std::cout << "image format error " << code << std::endl;
+				return RotatedRect();
+			}
+
+			cv::threshold(bin, thres, 128, 255, CV_THRESH_BINARY);
+			//寻找最外层轮廓  
+			vector<Vec4i> hierarchy;
+			findContours(thres, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_NONE, Point());
+			if (contours.size() != 1)
+			{
+				puts("没有发现模板，或者发现多个模板\n");
+				return RotatedRect();
+			}
+		}
+		catch (cv::Exception e)
+		{
+			std::cout << "model error code " << code << std::endl;
+			return RotatedRect();
+		}
+
+		for (auto contour : contours)
+		{
+			RotatedRect rect = minAreaRect(contour);
+			Point2f P[4];
+			rect.points(P);
+			angle = static_cast<double>(rect.angle);
+			return rect;
+		}
+		return RotatedRect();
 	}
 };
 #endif
